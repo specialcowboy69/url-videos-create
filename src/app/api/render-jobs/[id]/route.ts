@@ -1,4 +1,5 @@
 import { renderQueue } from "@/lib/renderQueue";
+import { validateApiKey } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,11 +8,16 @@ export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  const auth = validateApiKey(request);
+  if (!auth.valid) {
+    return Response.json({ error: auth.error }, { status: 401 });
+  }
+
   const jobId = params.id;
-  const job = renderQueue.getJob(jobId);
+  const job = await renderQueue.getJob(jobId);
 
   // Trigger manual cleanup of old jobs when checking status
-  renderQueue.cleanupOldJobs();
+  await renderQueue.cleanupOldJobs();
 
   if (!job) {
     return Response.json({ error: "Job not found" }, { status: 404 });

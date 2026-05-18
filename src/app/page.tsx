@@ -31,6 +31,7 @@ export default function HomePage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState("");
 
   const activeFormat = VIDEO_FORMATS[format];
   const outputName = useMemo(() => `hyperframes-${format.replace(":", "x")}.mp4`, [format]);
@@ -60,9 +61,12 @@ export default function HomePage() {
     setStatus("Leyendo la URL y preparando la plantilla...");
 
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
       const response = await fetch("/api/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ url: sourceUrl, format })
       });
 
@@ -99,9 +103,12 @@ export default function HomePage() {
     setStatus("Enviando trabajo a la cola...");
 
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
       const response = await fetch("/api/render-jobs", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ htmlCode, format, narrationText })
       });
 
@@ -122,23 +129,37 @@ export default function HomePage() {
     }
   }
 
-  async function pollJobStatus(id: string) {
+  async function pollJobStatus(id: string, retryCount = 0) {
     try {
-      const response = await fetch(`/api/render-jobs/${id}`);
-      const data = await response.json();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
+      const response = await fetch(`/api/render-jobs/${id}`, { headers });
+      
       if (!response.ok) {
+        if (response.status === 502 && retryCount < 5) {
+          console.warn(`502 error during polling, retrying... (${retryCount + 1}/5)`);
+          setTimeout(() => pollJobStatus(id, retryCount + 1), 5000);
+          return;
+        }
+        const data = await response.json().catch(() => ({}));
         throw new Error(data.error || "Error consultando el estado del trabajo.");
       }
 
+      const data = await response.json();
+
       if (data.status === "pending") {
         setStatus(`Trabajo encolado (ID: ${id}). Esperando turno...`);
-        setTimeout(() => pollJobStatus(id), 3000);
+        setTimeout(() => pollJobStatus(id, 0), 3000);
       } else if (data.status === "rendering") {
         setStatus(`Render en curso (ID: ${id}). Esto puede tardar unos minutos...`);
-        setTimeout(() => pollJobStatus(id), 3000);
+        setTimeout(() => pollJobStatus(id, 0), 3000);
       } else if (data.status === "done") {
-        setVideoUrl(data.downloadUrl);
+        setStatus("Descargando archivo resultante...");
+        const videoRes = await fetch(data.downloadUrl, { headers });
+        if (!videoRes.ok) throw new Error("No se pudo descargar el video resultante.");
+        const blob = await videoRes.blob();
+        setVideoUrl(URL.createObjectURL(blob));
         setStatus("Render completado. Ya puedes previsualizar o descargar el MP4.");
         setIsRendering(false);
         setJobId(null);
@@ -164,6 +185,15 @@ export default function HomePage() {
           <p className="mt-2 max-w-2xl text-base font-medium text-neutral-600">
             Convierte una URL en una plantilla editable o pega tu HTML HyperFrames y genera un MP4.
           </p>
+          <div className="mt-4">
+            <input
+              type="password"
+              placeholder="API Key (Opcional en dev)"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              className="w-full max-w-xs border border-neutral-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-signal"
+            />
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">

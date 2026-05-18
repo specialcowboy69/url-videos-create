@@ -1,5 +1,7 @@
 import { buildUrlVideoTemplate } from "@/lib/templates";
 import { getVideoFormat } from "@/lib/videoFormats";
+import { validateApiKey } from "@/lib/auth";
+import { generateRateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +45,17 @@ function decodeEntities(value: string) {
 }
 
 export async function POST(request: Request) {
+  const auth = validateApiKey(request);
+  if (!auth.valid) {
+    return Response.json({ error: auth.error }, { status: 401 });
+  }
+
+  const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
+  const rateLimit = generateRateLimit(ip);
+  if (!rateLimit.allowed) {
+    return Response.json({ error: "Too many requests. Please try again later.", retryAfterMs: rateLimit.retryAfterMs }, { status: 429 });
+  }
+
   let payload: GenerateRequest;
 
   try {

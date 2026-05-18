@@ -52,15 +52,17 @@ ENV NODE_ENV=production
 ENV PORT=10000
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROMIUM_PATH=/usr/bin/chromium
-ENV HYPERFRAMES_BROWSER_PATH=/opt/chrome-headless-shell/chrome-headless-shell
+ENV CHROME_BIN=/app/chrome-wrapper.sh
+ENV CHROMIUM_PATH=/app/chrome-wrapper.sh
+ENV HYPERFRAMES_BROWSER_PATH=/app/chrome-wrapper.sh
 ENV FFMPEG_PATH=/usr/bin/ffmpeg
 ENV PUPPETEER_CACHE_DIR=/opt/puppeteer
 
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/server.js ./server.js
 COPY --from=builder /app/next.config.js ./next.config.js
+COPY --from=builder /app/chrome-wrapper.sh ./chrome-wrapper.sh
+RUN chmod +x ./chrome-wrapper.sh
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules

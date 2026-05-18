@@ -5,6 +5,8 @@ import path from "node:path";
 import { renderQueue } from "@/lib/renderQueue";
 import { byteLength, MAX_HTML_BYTES } from "@/lib/hyperframesUtils";
 import { applyFormatTokens, getVideoFormat } from "@/lib/videoFormats";
+import { validateApiKey } from "@/lib/auth";
+import { renderRateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +18,17 @@ type RenderRequest = {
 };
 
 export async function POST(request: Request) {
+  const auth = validateApiKey(request);
+  if (!auth.valid) {
+    return Response.json({ error: auth.error }, { status: 401 });
+  }
+
+  const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
+  const rateLimit = renderRateLimit(ip);
+  if (!rateLimit.allowed) {
+    return Response.json({ error: "Too many requests. Please try again later.", retryAfterMs: rateLimit.retryAfterMs }, { status: 429 });
+  }
+
   let payload: RenderRequest;
 
   try {
@@ -41,7 +54,7 @@ export async function POST(request: Request) {
     await mkdir(projectDir, { recursive: true });
 
     // Encolar job
-    const jobId = renderQueue.createJob(projectDir, outputName);
+    const jobId = await renderQueue.createJob(projectDir, outputName);
     
     // Iniciar sin await (fire and forget)
     renderQueue.startJob(jobId, html, payload.narrationText).catch(console.error);

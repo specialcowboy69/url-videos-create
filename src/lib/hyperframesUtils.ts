@@ -18,15 +18,20 @@ export function trimLog(value: string) {
 }
 
 function hyperframesCommand(args: string[]) {
+  // Usar nice -n 10 para reducir la prioridad de la CPU del proceso hijo y evitar congelar Node
   return {
-    command: process.execPath,
-    args: [path.join(process.cwd(), "node_modules", "hyperframes", "dist", "cli.js"), ...args]
+    command: "nice",
+    args: ["-n", "10", process.execPath, path.join(process.cwd(), "node_modules", "hyperframes", "dist", "cli.js"), ...args]
   };
 }
 
 export function runHyperframes(projectDir: string, args: string[], timeoutMs: number) {
   return new Promise<void>((resolve, reject) => {
     const command = hyperframesCommand(args);
+    const browserPath = process.env.HYPERFRAMES_BROWSER_PATH || process.env.CHROME_BIN || process.env.CHROMIUM_PATH || "/usr/bin/chromium";
+    console.log(`[HyperFrames] Spawning: ${command.command} ${command.args.join(" ")}`);
+    console.log(`[HyperFrames] Using browser: ${browserPath}`);
+    
     const child = spawn(
       command.command,
       command.args,
@@ -34,10 +39,9 @@ export function runHyperframes(projectDir: string, args: string[], timeoutMs: nu
         cwd: projectDir,
         env: {
           ...process.env,
-          HYPERFRAMES_BROWSER_PATH:
-            process.env.HYPERFRAMES_BROWSER_PATH || process.env.CHROME_BIN || process.env.CHROMIUM_PATH || "/usr/bin/chromium",
-          CHROME_BIN: process.env.CHROME_BIN || process.env.CHROMIUM_PATH || "/usr/bin/chromium",
-          CHROMIUM_PATH: process.env.CHROMIUM_PATH || process.env.CHROME_BIN || "/usr/bin/chromium",
+          HYPERFRAMES_BROWSER_PATH: browserPath,
+          CHROME_BIN: browserPath,
+          CHROMIUM_PATH: browserPath,
           FFMPEG_PATH: process.env.FFMPEG_PATH || "/usr/bin/ffmpeg"
         },
         shell: false,

@@ -5,6 +5,8 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { applyFormatTokens, getVideoFormat } from "@/lib/videoFormats";
+import { validateApiKey } from "@/lib/auth";
+import { renderRateLimit } from "@/lib/rateLimit";
 import {
   byteLength,
   trimLog,
@@ -22,8 +24,21 @@ type RenderRequest = {
   narrationText?: unknown;
 };
 
-// Se recomienda usar /api/render-jobs para producción (Render) para evitar errores 502 por timeout.
+// ENDPOINT SÍNCRONO — Solo para desarrollo local.
+// En producción, usar /api/render-jobs (cola asíncrona).
+// Este endpoint puede causar 502 si el render tarda más que el timeout del proxy.
 export async function POST(request: Request) {
+  const auth = validateApiKey(request);
+  if (!auth.valid) {
+    return Response.json({ error: auth.error }, { status: 401 });
+  }
+
+  const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
+  const rateLimit = renderRateLimit(ip);
+  if (!rateLimit.allowed) {
+    return Response.json({ error: "Too many requests. Please try again later.", retryAfterMs: rateLimit.retryAfterMs }, { status: 429 });
+  }
+
   let payload: RenderRequest;
 
   try {

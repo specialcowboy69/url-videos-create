@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { rm, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { rm, writeFile, readFile, readdir } from "node:fs/promises";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { maybeGenerateNarration, runHyperframesRender, trimLog } from "./hyperframesUtils";
 
@@ -16,30 +16,69 @@ export interface RenderJob {
   projectDir: string;
 }
 
+const PERSISTENCE_DIR = "/tmp/hyperframes-jobs";
+
 class RenderQueue {
   private jobs: Map<string, RenderJob> = new Map();
   private activeJobs: number = 0;
   private readonly MAX_CONCURRENT_JOBS = 1;
   private queue: string[] = [];
+  private initialized = false;
 
   constructor() {
+    mkdirSync(PERSISTENCE_DIR, { recursive: true });
     // Iniciar limpieza periódica de trabajos (cada 5 minutos)
     setInterval(() => this.cleanupOldJobs(), 5 * 60 * 1000);
   }
 
-  createJob(projectDir: string, outputName: string): string {
+  async initialize() {
+    if (this.initialized) return;
+    this.initialized = true;
+    try {
+      const files = await readdir(PERSISTENCE_DIR);
+      for (const file of files) {
+        if (file.endsWith(".json")) {
+          const content = await readFile(path.join(PERSISTENCE_DIR, file), "utf8");
+          const job: RenderJob = JSON.parse(content);
+          if (job.status === "rendering" || job.status === "pending") {
+            job.status = "failed";
+            job.error = "Server restarted while job was in progress.";
+            job.completedAt = Date.now();
+            await this.saveJob(job);
+          }
+          this.jobs.set(job.id, job);
+        }
+      }
+    } catch (error) {
+      console.error("Error initializing render queue:", error);
+    }
+  }
+
+  private async saveJob(job: RenderJob) {
+    try {
+      await writeFile(path.join(PERSISTENCE_DIR, `${job.id}.json`), JSON.stringify(job), "utf8");
+    } catch (error) {
+      console.error("Error saving job to disk:", error);
+    }
+  }
+
+  async createJob(projectDir: string, outputName: string): Promise<string> {
+    await this.initialize();
     const id = randomUUID();
-    this.jobs.set(id, {
+    const job: RenderJob = {
       id,
       status: "pending",
       createdAt: Date.now(),
       outputName,
       projectDir,
-    });
+    };
+    this.jobs.set(id, job);
+    await this.saveJob(job);
     return id;
   }
 
-  getJob(id: string): RenderJob | undefined {
+  async getJob(id: string): Promise<RenderJob | undefined> {
+    await this.initialize();
     return this.jobs.get(id);
   }
 
@@ -57,6 +96,7 @@ class RenderQueue {
 
     this.activeJobs++;
     job.status = "rendering";
+    await this.saveJob(job);
 
     try {
       await maybeGenerateNarration(job.projectDir, narrationText);
@@ -77,6 +117,7 @@ class RenderQueue {
       job.completedAt = Date.now();
       job.error = error instanceof Error ? trimLog(error.message) : "Unknown render error.";
     } finally {
+      await this.saveJob(job);
       this.activeJobs--;
       this.processNextJob();
     }
@@ -95,7 +136,8 @@ class RenderQueue {
     }
   }
 
-  getJobResult(id: string): string | undefined {
+  async getJobResult(id: string): Promise<string | undefined> {
+    await this.initialize();
     const job = this.jobs.get(id);
     if (job?.status === "done") {
       return path.join(job.projectDir, job.outputName);
@@ -103,13 +145,14 @@ class RenderQueue {
     return undefined;
   }
 
-  cleanupOldJobs() {
+  async cleanupOldJobs() {
     const now = Date.now();
     const THIRTY_MINUTES = 30 * 60 * 1000;
     for (const [id, job] of this.jobs.entries()) {
       if (job.completedAt && now - job.completedAt > THIRTY_MINUTES) {
-        // Eliminar directorio temporal
+        // Eliminar directorio temporal y JSON persistente
         rm(job.projectDir, { recursive: true, force: true }).catch(console.error);
+        rm(path.join(PERSISTENCE_DIR, `${id}.json`), { force: true }).catch(console.error);
         this.jobs.delete(id);
       }
     }
@@ -121,8 +164,7 @@ class RenderQueue {
     const job = this.jobs.get(id);
     if (job) {
       await rm(job.projectDir, { recursive: true, force: true }).catch(console.error);
-      // No borramos el job de memoria inmediatamente para que el estado quede como "failed/done",
-      // pero si ya descargó el MP4, podríamos hacerlo.
+      // No borramos el job de memoria inmediatamente para que el estado quede como "failed/done"
     }
   }
 }
