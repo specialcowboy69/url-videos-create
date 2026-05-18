@@ -39,6 +39,7 @@ export function runHyperframes(projectDir: string, args: string[], timeoutMs: nu
         cwd: projectDir,
         env: {
           ...process.env,
+          PORT: "0",
           HYPERFRAMES_BROWSER_PATH: browserPath,
           CHROME_BIN: browserPath,
           CHROMIUM_PATH: browserPath,
