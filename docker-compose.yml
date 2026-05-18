@@ -9,9 +9,9 @@ services:
       - NODE_ENV=production
       - PORT=10000
       - API_KEY=${API_KEY}
-    shm_size: '512m' # Asignar explícitamente espacio compartido para evitar crasheos de Chrome
+    shm_size: '2gb' # Aumentado a 2GB dado que el host tiene 8GB (Chrome consume mucha SHM al procesar video)
     deploy:
       resources:
         limits:
-          memory: 1500M # Límite de memoria para dejar algo para el sistema y base de datos (si la hubiera)
+          memory: 6G # Reservamos hasta 6GB para la app, dejando 2GB libres para Nginx y Ubuntu
     restart: unless-stopped

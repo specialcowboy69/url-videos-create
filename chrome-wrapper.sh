@@ -17,4 +17,4 @@ if [ ! -x "$CHROME_BIN" ]; then
   CHROME_BIN="/usr/bin/chromium-browser"
 fi
 
-exec "$CHROME_BIN" --disable-dev-shm-usage --disable-gpu --js-flags="--max-old-space-size=256" "$@"
+exec "$CHROME_BIN" --disable-dev-shm-usage --disable-gpu --js-flags="--max-old-space-size=2048" "$@"
