@@ -97,7 +97,7 @@ export function buildUrlVideoTemplate(input: TemplateInput): GeneratedVideoTempl
     data-height="${input.format.height}"
     style="position:relative;width:100%;height:100%;background:#F7F4EE;color:#171717;font-family:Arial,sans-serif;overflow:hidden;isolation:isolate;"
   >
-    <audio id="voiceover" src="narration.wav" data-start="0" data-duration="14" data-track-index="0" data-volume="1"></audio>
+    {{NARRATION_AUDIO}}
     <div class="grid"></div>
     <div class="ticker"><span>${domain} / VIDEO DESDE URL / GUION / SUBTITULOS / MP4 / ${domain} / VIDEO DESDE URL / </span></div>
 

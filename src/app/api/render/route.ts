@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 const MAX_HTML_BYTES = 1_000_000;
 const MAX_NARRATION_BYTES = 8_000;
 const RENDER_TIMEOUT_MS = 900_000;
+const TTS_TIMEOUT_MS = 90_000;
 const MAX_LOG_BYTES = 12_000;
 
 type RenderRequest = {
@@ -114,11 +115,16 @@ async function maybeGenerateNarration(projectDir: string, narrationText: unknown
   }
 
   await writeFile(path.join(projectDir, "narration.txt"), narrationText.trim(), "utf8");
-  await runHyperframes(
-    projectDir,
-    ["tts", "narration.txt", "--voice", "ef_dora", "--output", "narration.wav"],
-    600_000
-  );
+  try {
+    await runHyperframes(
+      projectDir,
+      ["tts", "narration.txt", "--voice", "ef_dora", "--output", "narration.wav"],
+      TTS_TIMEOUT_MS
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown TTS error.";
+    await writeFile(path.join(projectDir, "tts-warning.txt"), trimLog(message), "utf8");
+  }
 }
 
 export async function POST(request: Request) {
@@ -142,13 +148,18 @@ export async function POST(request: Request) {
   const projectDir = path.join(tmpdir(), `hyperframes-render-${randomUUID()}`);
   const outputName = `video-${format.id.replace(":", "x")}.mp4`;
   const outputPath = path.join(projectDir, outputName);
-  const html = applyFormatTokens(payload.htmlCode, format);
+  let html = applyFormatTokens(payload.htmlCode, format);
 
   try {
     await mkdir(projectDir, { recursive: true });
-    await writeFile(path.join(projectDir, "index.html"), html, "utf8");
 
     await maybeGenerateNarration(projectDir, payload.narrationText);
+    const audioTag = existsSync(path.join(projectDir, "narration.wav"))
+      ? '<audio id="voiceover" src="narration.wav" data-start="0" data-duration="14" data-track-index="0" data-volume="1"></audio>'
+      : "";
+    html = html.replaceAll("{{NARRATION_AUDIO}}", audioTag);
+
+    await writeFile(path.join(projectDir, "index.html"), html, "utf8");
     await runHyperframesRender(projectDir, outputName);
 
     const stream = createReadStream(outputPath);
