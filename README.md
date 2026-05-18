@@ -46,9 +46,11 @@ docker run --rm -p 3000:3000 hyperframes-render-studio
 1. Sube esta carpeta a GitHub.
 2. Crea un nuevo **Web Service** en Render.
 3. Elige **Docker** como entorno.
-4. Render construira el `Dockerfile` e iniciara la app con `npm run start`.
+4. Si el repositorio contiene mas carpetas, configura **Root Directory** como `hyperframes-render-studio`.
+5. Configura el **Health Check Path** como `/api/health`.
+6. Render construira el `Dockerfile` e iniciara la app con `npm run start`.
 
-El contenedor incluye Node 22, Chromium, chrome-headless-shell, FFmpeg, espeak-ng y fuentes basicas.
+El contenedor incluye Node 22, Chromium, chrome-headless-shell, FFmpeg, espeak-ng y fuentes basicas. El servidor escucha el puerto indicado por `PORT`, que Render inyecta automaticamente.
 
 ## Endpoints
 
@@ -60,6 +62,9 @@ El contenedor incluye Node 22, Chromium, chrome-headless-shell, FFmpeg, espeak-n
   - Body: `{ "htmlCode": "...", "format": "9:16", "narrationText": "..." }`
   - Devuelve: `video/mp4`
 
+- `GET /api/health`
+  - Devuelve: `{ "ok": true }`
+
 ## Seguridad del MVP
 
 El backend aplica limite de tamano al HTML, timeout de render, directorios temporales unicos y bloqueo basico de hosts privados en el modo URL. Si expones esto publicamente, el siguiente paso razonable es anadir autenticacion, cuotas por usuario y una cola de trabajos.
@@ -68,5 +73,6 @@ El backend aplica limite de tamano al HTML, timeout de render, directorios tempo
 
 - **`FFmpeg not found`**: instala FFmpeg localmente o ejecuta la app con Docker. El Dockerfile ya incluye FFmpeg.
 - **Render timeout**: el backend usa 10 minutos de timeout, 24fps, calidad draft y 1 worker por defecto. Si aun expira, acorta el HTML o sube el plan de Render.
+- **502 Bad Gateway en Render**: revisa primero los logs del servicio. Las causas mas probables son puerto/host mal configurado, que el proceso se cierre al arrancar, falta de recursos durante renderizado, o que la peticion de render tarde demasiado para una respuesta HTTP directa. Para renders largos, usa una cola y devuelve un job id en vez de mantener la peticion abierta.
 - **PowerShell bloquea `npm`**: usa `npm.cmd install` y `npm.cmd run dev`.
 - **Render tarda mucho**: baja la duracion del HTML o usa una cola de trabajos para renders largos.

@@ -4,9 +4,10 @@ type VideoPreviewProps = {
   videoUrl: string | null;
   fileName: string;
   isRendering: boolean;
+  jobId?: string;
 };
 
-export function VideoPreview({ videoUrl, fileName, isRendering }: VideoPreviewProps) {
+export function VideoPreview({ videoUrl, fileName, isRendering, jobId }: VideoPreviewProps) {
   return (
     <section className="flex min-h-[520px] flex-col rounded border border-neutral-200 bg-white shadow-studio">
       <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
@@ -30,6 +31,7 @@ export function VideoPreview({ videoUrl, fileName, isRendering }: VideoPreviewPr
           <div className="flex flex-col items-center gap-4 text-white">
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/25 border-t-white" />
             <p className="text-sm font-medium text-white/80">Renderizando video...</p>
+            {jobId && <p className="text-xs text-white/50">Job ID: {jobId}</p>}
           </div>
         ) : videoUrl ? (
           <video className="max-h-[70vh] w-full bg-black" src={videoUrl} controls />

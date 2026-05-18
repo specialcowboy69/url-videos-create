@@ -30,6 +30,7 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
 
   const activeFormat = VIDEO_FORMATS[format];
   const outputName = useMemo(() => `hyperframes-${format.replace(":", "x")}.mp4`, [format]);
@@ -87,6 +88,7 @@ export default function HomePage() {
     setError("");
     setStatus("");
     clearVideo();
+    setJobId(null);
 
     if (!htmlCode.trim()) {
       setError("El HTML no puede estar vacio.");
@@ -94,34 +96,60 @@ export default function HomePage() {
     }
 
     setIsRendering(true);
-    setStatus("Render en curso. Esto puede tardar uno o dos minutos en Render.com.");
+    setStatus("Enviando trabajo a la cola...");
 
     try {
-      const response = await fetch("/api/render", {
+      const response = await fetch("/api/render-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ htmlCode, format, narrationText })
       });
 
-      const contentType = response.headers.get("content-type") || "";
+      const data = await response.json();
 
-      if (!response.ok) {
-        if (contentType.includes("application/json")) {
-          const data = (await response.json()) as { error?: string; details?: string };
-          throw new Error(data.details || data.error || "Render fallido.");
-        }
-        throw new Error(await response.text());
+      if (!response.ok || !data.jobId) {
+        throw new Error(data.error || "No se pudo encolar el renderizado.");
       }
 
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      setVideoUrl(url);
-      setStatus("Render completado. Ya puedes previsualizar o descargar el MP4.");
+      setJobId(data.jobId);
+      setStatus(`Trabajo encolado (ID: ${data.jobId}). Esperando renderizado...`);
+      
+      pollJobStatus(data.jobId);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Error renderizando video.");
+      setError(caught instanceof Error ? caught.message : "Error iniciando render.");
       setStatus("");
-    } finally {
       setIsRendering(false);
+    }
+  }
+
+  async function pollJobStatus(id: string) {
+    try {
+      const response = await fetch(`/api/render-jobs/${id}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Error consultando el estado del trabajo.");
+      }
+
+      if (data.status === "pending") {
+        setStatus(`Trabajo encolado (ID: ${id}). Esperando turno...`);
+        setTimeout(() => pollJobStatus(id), 3000);
+      } else if (data.status === "rendering") {
+        setStatus(`Render en curso (ID: ${id}). Esto puede tardar unos minutos...`);
+        setTimeout(() => pollJobStatus(id), 3000);
+      } else if (data.status === "done") {
+        setVideoUrl(data.downloadUrl);
+        setStatus("Render completado. Ya puedes previsualizar o descargar el MP4.");
+        setIsRendering(false);
+        setJobId(null);
+      } else if (data.status === "failed") {
+        throw new Error(data.error || "El renderizado ha fallado.");
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Error durante el render.");
+      setStatus("");
+      setIsRendering(false);
+      setJobId(null);
     }
   }
 
@@ -259,7 +287,7 @@ export default function HomePage() {
           ) : null}
         </div>
 
-        <VideoPreview videoUrl={videoUrl} fileName={outputName} isRendering={isRendering} />
+        <VideoPreview videoUrl={videoUrl} fileName={outputName} isRendering={isRendering} jobId={jobId || undefined} />
       </section>
     </main>
   );

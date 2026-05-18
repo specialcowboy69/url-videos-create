@@ -22,7 +22,7 @@ ENV FFMPEG_PATH=/usr/bin/ffmpeg
 ENV PUPPETEER_CACHE_DIR=/opt/puppeteer
 
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm ci
 RUN npx --yes @puppeteer/browsers install chrome-headless-shell@stable --path /opt/puppeteer \
   && browser_bin="$(find /opt/puppeteer -type f -name chrome-headless-shell | head -n 1)" \
   && mkdir -p /opt/chrome-headless-shell \
@@ -49,7 +49,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=10000
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV CHROME_BIN=/usr/bin/chromium
@@ -59,6 +59,7 @@ ENV FFMPEG_PATH=/usr/bin/ffmpeg
 ENV PUPPETEER_CACHE_DIR=/opt/puppeteer
 
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/server.js ./server.js
 COPY --from=builder /app/next.config.js ./next.config.js
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
@@ -66,6 +67,6 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /opt/puppeteer /opt/puppeteer
 COPY --from=builder /opt/chrome-headless-shell /opt/chrome-headless-shell
 
-EXPOSE 3000
+EXPOSE 10000
 
 CMD ["npm", "run", "start"]
