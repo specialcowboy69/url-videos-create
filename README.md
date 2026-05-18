@@ -7,9 +7,10 @@ Aplicacion web Next.js para convertir una URL en una plantilla HyperFrames edita
 1. Pega una URL publica.
 2. Elige formato: `16:9`, `9:16` o `1:1`.
 3. Genera una plantilla editable.
-4. Ajusta el HTML si quieres.
+4. Ajusta el HTML o la narracion si quieres.
 5. Pulsa **Renderizar video**.
-6. Previsualiza y descarga el MP4.
+6. La app genera `narration.wav`, subtitulos en pantalla y el MP4 final.
+7. Previsualiza y descarga el MP4.
 
 ## Desarrollo local
 
@@ -47,7 +48,7 @@ docker run --rm -p 3000:3000 hyperframes-render-studio
 3. Elige **Docker** como entorno.
 4. Render construira el `Dockerfile` e iniciara la app con `npm run start`.
 
-El contenedor incluye Node 22, Chromium, chrome-headless-shell, FFmpeg y fuentes basicas.
+El contenedor incluye Node 22, Chromium, chrome-headless-shell, FFmpeg, espeak-ng y fuentes basicas.
 
 ## Endpoints
 
@@ -56,7 +57,7 @@ El contenedor incluye Node 22, Chromium, chrome-headless-shell, FFmpeg y fuentes
   - Devuelve: `{ htmlCode, metadata }`
 
 - `POST /api/render`
-  - Body: `{ "htmlCode": "...", "format": "9:16" }`
+  - Body: `{ "htmlCode": "...", "format": "9:16", "narrationText": "..." }`
   - Devuelve: `video/mp4`
 
 ## Seguridad del MVP

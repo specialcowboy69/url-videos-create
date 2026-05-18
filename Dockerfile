@@ -6,6 +6,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
     chromium \
+    espeak-ng \
     ffmpeg \
     fonts-dejavu \
     fonts-liberation \
@@ -39,6 +40,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
     chromium \
+    espeak-ng \
     ffmpeg \
     fonts-dejavu \
     fonts-liberation \

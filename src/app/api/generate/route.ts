@@ -89,7 +89,7 @@ export async function POST(request: Request) {
       "Video generado automaticamente desde esta URL."
     );
 
-    const htmlCode = buildUrlVideoTemplate({
+    const template = buildUrlVideoTemplate({
       title,
       description,
       sourceUrl: parsed.toString(),
@@ -98,7 +98,8 @@ export async function POST(request: Request) {
     });
 
     return Response.json({
-      htmlCode,
+      htmlCode: template.htmlCode,
+      narrationText: template.narrationText,
       metadata: {
         title,
         description,

@@ -11,12 +11,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_HTML_BYTES = 1_000_000;
-const RENDER_TIMEOUT_MS = 600_000;
+const MAX_NARRATION_BYTES = 8_000;
+const RENDER_TIMEOUT_MS = 900_000;
 const MAX_LOG_BYTES = 12_000;
 
 type RenderRequest = {
   htmlCode?: unknown;
   format?: unknown;
+  narrationText?: unknown;
 };
 
 function byteLength(value: string) {
@@ -35,20 +37,9 @@ function hyperframesCommand(args: string[]) {
   };
 }
 
-function runHyperframesRender(projectDir: string, outputName: string) {
+function runHyperframes(projectDir: string, args: string[], timeoutMs: number) {
   return new Promise<void>((resolve, reject) => {
-    const command = hyperframesCommand([
-      "render",
-      ".",
-      "--output",
-      outputName,
-      "--fps",
-      "24",
-      "--quality",
-      "draft",
-      "--workers",
-      "1"
-    ]);
+    const command = hyperframesCommand(args);
     const child = spawn(
       command.command,
       command.args,
@@ -74,8 +65,8 @@ function runHyperframesRender(projectDir: string, outputName: string) {
     const timeout = setTimeout(() => {
       if (finished) return;
       child.kill("SIGTERM");
-      reject(new Error(`Render timeout after ${RENDER_TIMEOUT_MS / 1000}s\n${trimLog(stderr || stdout)}`));
-    }, RENDER_TIMEOUT_MS);
+      reject(new Error(`HyperFrames timeout after ${timeoutMs / 1000}s\n${trimLog(stderr || stdout)}`));
+    }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
@@ -107,6 +98,29 @@ function runHyperframesRender(projectDir: string, outputName: string) {
   });
 }
 
+function runHyperframesRender(projectDir: string, outputName: string) {
+  return runHyperframes(
+    projectDir,
+    ["render", ".", "--output", outputName, "--fps", "24", "--quality", "draft", "--workers", "1"],
+    RENDER_TIMEOUT_MS
+  );
+}
+
+async function maybeGenerateNarration(projectDir: string, narrationText: unknown) {
+  if (typeof narrationText !== "string" || narrationText.trim().length === 0) return;
+
+  if (byteLength(narrationText) > MAX_NARRATION_BYTES) {
+    throw new Error("narrationText is too large. Maximum size is 8 KB.");
+  }
+
+  await writeFile(path.join(projectDir, "narration.txt"), narrationText.trim(), "utf8");
+  await runHyperframes(
+    projectDir,
+    ["tts", "narration.txt", "--voice", "ef_dora", "--output", "narration.wav"],
+    600_000
+  );
+}
+
 export async function POST(request: Request) {
   let payload: RenderRequest;
 
@@ -134,6 +148,7 @@ export async function POST(request: Request) {
     await mkdir(projectDir, { recursive: true });
     await writeFile(path.join(projectDir, "index.html"), html, "utf8");
 
+    await maybeGenerateNarration(projectDir, payload.narrationText);
     await runHyperframesRender(projectDir, outputName);
 
     const stream = createReadStream(outputPath);

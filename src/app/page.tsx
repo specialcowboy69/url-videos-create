@@ -7,6 +7,7 @@ import { VIDEO_FORMATS, type VideoFormatId } from "@/lib/videoFormats";
 
 type GenerateResponse = {
   htmlCode?: string;
+  narrationText?: string;
   metadata?: {
     title: string;
     description: string;
@@ -23,6 +24,7 @@ export default function HomePage() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [format, setFormat] = useState<VideoFormatId>("16:9");
   const [htmlCode, setHtmlCode] = useState(DEFAULT_HTML);
+  const [narrationText, setNarrationText] = useState("");
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -70,6 +72,7 @@ export default function HomePage() {
       }
 
       setHtmlCode(data.htmlCode);
+      setNarrationText(data.narrationText || "");
       setMode("editor");
       setStatus(`Plantilla lista desde ${data.metadata?.domain || "la URL"}. Puedes editarla antes de renderizar.`);
     } catch (caught) {
@@ -97,7 +100,7 @@ export default function HomePage() {
       const response = await fetch("/api/render", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ htmlCode, format })
+        body: JSON.stringify({ htmlCode, format, narrationText })
       });
 
       const contentType = response.headers.get("content-type") || "";
@@ -208,7 +211,7 @@ export default function HomePage() {
               <div>
                 <h2 className="text-base font-semibold text-ink">HTML HyperFrames</h2>
                 <p className="text-sm text-neutral-500">
-                  Puedes usar tokens <code>{"{{WIDTH}}"}</code> y <code>{"{{HEIGHT}}"}</code>.
+                  Puedes usar tokens <code>{"{{WIDTH}}"}</code> y <code>{"{{HEIGHT}}"}</code>. Si hay narracion, se genera como <code>narration.wav</code>.
                 </p>
               </div>
               <button
@@ -225,6 +228,21 @@ export default function HomePage() {
               value={htmlCode}
               onChange={(event) => setHtmlCode(event.target.value)}
               spellCheck={false}
+            />
+          </section>
+
+          <section className="rounded border border-neutral-200 bg-white shadow-studio">
+            <div className="border-b border-neutral-200 px-5 py-4">
+              <h2 className="text-base font-semibold text-ink">Narracion y subtitulos</h2>
+              <p className="text-sm text-neutral-500">
+                Este texto se convierte en audio TTS y la plantilla generada ya incluye subtitulos visibles.
+              </p>
+            </div>
+            <textarea
+              className="min-h-36 w-full resize-y border-0 bg-panel p-5 text-sm leading-6 text-ink outline-none"
+              value={narrationText}
+              onChange={(event) => setNarrationText(event.target.value)}
+              placeholder="Genera una plantilla desde URL para crear narracion automaticamente."
             />
           </section>
 
