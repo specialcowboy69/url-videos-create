@@ -77,7 +77,7 @@ export function buildUrlVideoTemplate(input: TemplateInput) {
   <div
     data-composition-id="url-video"
     data-start="0"
-    data-duration="18"
+    data-duration="10"
     data-width="${input.format.width}"
     data-height="${input.format.height}"
     style="position:relative;width:100%;height:100%;background:#F7F4EE;color:#171717;font-family:Arial,sans-serif;overflow:hidden;"
@@ -105,9 +105,9 @@ export function buildUrlVideoTemplate(input: TemplateInput) {
       tl.fromTo(".card", { opacity: 0, y: 50 }, { opacity: 1, y: 0, stagger: 0.16, duration: 0.65, ease: "power3.out" }, 2.4);
       tl.to(".grid", { backgroundPosition: "160px 96px", duration: 16, ease: "none" }, 0);
       tl.to(".stamp", { scale: 1.04, yoyo: true, repeat: 8, duration: 0.9, ease: "sine.inOut" }, 1.2);
-      tl.to(".panel", { y: -18, duration: 10, ease: "none" }, 4);
-      tl.to(".card", { y: -10, stagger: 0.12, duration: 4, ease: "sine.inOut" }, 5.4);
-      tl.to([".panel", ".cards", ".stamp", ".source"], { opacity: 0, y: -35, duration: 0.65, ease: "power2.in" }, 17.2);
+      tl.to(".panel", { y: -14, duration: 5.4, ease: "none" }, 3.4);
+      tl.to(".card", { y: -8, stagger: 0.12, duration: 3, ease: "sine.inOut" }, 4.2);
+      tl.to([".panel", ".cards", ".stamp", ".source"], { opacity: 0, y: -35, duration: 0.55, ease: "power2.in" }, 9.35);
       window.__timelines["url-video"] = tl;
     </script>
   </div>

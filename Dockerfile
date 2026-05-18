@@ -18,9 +18,12 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMIUM_PATH=/usr/bin/chromium
 ENV FFMPEG_PATH=/usr/bin/ffmpeg
+ENV PUPPETEER_CACHE_DIR=/opt/puppeteer
 
 COPY package.json package-lock.json* ./
 RUN npm install
+RUN npx --yes @puppeteer/browsers install chrome-headless-shell@stable --path /opt/puppeteer \
+  && find /opt/puppeteer -type f -name chrome-headless-shell -exec ln -sf {} /usr/local/bin/chrome-headless-shell \;
 
 FROM deps AS builder
 COPY . .
@@ -47,13 +50,17 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMIUM_PATH=/usr/bin/chromium
+ENV HYPERFRAMES_BROWSER_PATH=/usr/local/bin/chrome-headless-shell
 ENV FFMPEG_PATH=/usr/bin/ffmpeg
+ENV PUPPETEER_CACHE_DIR=/opt/puppeteer
 
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/next.config.js ./next.config.js
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /opt/puppeteer /opt/puppeteer
+COPY --from=builder /usr/local/bin/chrome-headless-shell /usr/local/bin/chrome-headless-shell
 
 EXPOSE 3000
 

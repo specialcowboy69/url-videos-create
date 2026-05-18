@@ -47,7 +47,7 @@ docker run --rm -p 3000:3000 hyperframes-render-studio
 3. Elige **Docker** como entorno.
 4. Render construira el `Dockerfile` e iniciara la app con `npm run start`.
 
-El contenedor incluye Node 22, Chromium, FFmpeg y fuentes basicas.
+El contenedor incluye Node 22, Chromium, chrome-headless-shell, FFmpeg y fuentes basicas.
 
 ## Endpoints
 
@@ -66,5 +66,6 @@ El backend aplica limite de tamano al HTML, timeout de render, directorios tempo
 ## Troubleshooting
 
 - **`FFmpeg not found`**: instala FFmpeg localmente o ejecuta la app con Docker. El Dockerfile ya incluye FFmpeg.
+- **Render timeout**: el backend usa 10 minutos de timeout, 24fps, calidad draft y 1 worker por defecto. Si aun expira, acorta el HTML o sube el plan de Render.
 - **PowerShell bloquea `npm`**: usa `npm.cmd install` y `npm.cmd run dev`.
 - **Render tarda mucho**: baja la duracion del HTML o usa una cola de trabajos para renders largos.

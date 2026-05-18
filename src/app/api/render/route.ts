@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_HTML_BYTES = 1_000_000;
-const RENDER_TIMEOUT_MS = 120_000;
+const RENDER_TIMEOUT_MS = 600_000;
 const MAX_LOG_BYTES = 12_000;
 
 type RenderRequest = {
@@ -37,7 +37,18 @@ function hyperframesCommand(args: string[]) {
 
 function runHyperframesRender(projectDir: string, outputName: string) {
   return new Promise<void>((resolve, reject) => {
-    const command = hyperframesCommand(["render", ".", "--output", outputName]);
+    const command = hyperframesCommand([
+      "render",
+      ".",
+      "--output",
+      outputName,
+      "--fps",
+      "24",
+      "--quality",
+      "draft",
+      "--workers",
+      "1"
+    ]);
     const child = spawn(
       command.command,
       command.args,
@@ -45,6 +56,8 @@ function runHyperframesRender(projectDir: string, outputName: string) {
         cwd: projectDir,
         env: {
           ...process.env,
+          HYPERFRAMES_BROWSER_PATH:
+            process.env.HYPERFRAMES_BROWSER_PATH || process.env.CHROME_BIN || process.env.CHROMIUM_PATH || "/usr/bin/chromium",
           CHROME_BIN: process.env.CHROME_BIN || process.env.CHROMIUM_PATH || "/usr/bin/chromium",
           CHROMIUM_PATH: process.env.CHROMIUM_PATH || process.env.CHROME_BIN || "/usr/bin/chromium",
           FFMPEG_PATH: process.env.FFMPEG_PATH || "/usr/bin/ffmpeg"
