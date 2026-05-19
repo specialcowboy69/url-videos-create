@@ -1,208 +1,66 @@
 # Handoff - HyperFrames Render Studio
 
-## Objetivo
+## Objetivo Cumplido
 
-Crear y desplegar una app web capaz de:
+Crear y desplegar una app web capaz de generar vídeos MP4 de alta calidad a partir de plantillas HTML y URLs, con un sistema robusto preparado para producción en una VPS de Hostinger.
 
-1. Recibir una URL publica.
-2. Leer metadatos basicos de esa pagina.
-3. Generar una plantilla HTML compatible con HyperFrames.
-4. Permitir editar HTML y narracion.
-5. Renderizar el resultado como un video MP4.
-6. Ejecutarse en Render.com usando Docker.
+## Estado Actual y Arquitectura
 
-## Estado Actual
+La aplicación está desplegada en una VPS de Hostinger usando Docker Compose y Nginx como Proxy Inverso. Se ha refactorizado la arquitectura para garantizar resiliencia frente a renders pesados (evitando los antiguos errores 502 de Render.com) y caídas por falta de memoria (OOM).
 
-La app esta en `hyperframes-render-studio`.
+### 1. Sistema de Colas Asíncrono (Job Queue)
+El renderizado ya no bloquea la petición HTTP principal.
+- `POST /api/render-jobs`: Recibe el HTML y encola el trabajo (Job). Devuelve un `jobId` al instante.
+- `GET /api/render-jobs/:id`: El frontend (cliente) hace "polling" cada 3 segundos para consultar si el trabajo está `pending`, `rendering` o `done`.
+- `GET /api/render-jobs/:id/download`: Sirve el archivo `.mp4` final de forma segura mediante un Blob URL.
 
-Es una app Next.js 14 con estos endpoints principales:
+### 2. Persistencia en Disco
+Para evitar perder trabajos si el contenedor Docker se reinicia inesperadamente, el estado de la cola se persiste en archivos JSON dentro de `/tmp/hyperframes-jobs/`. Al arrancar, el servidor Node.js recupera automáticamente los trabajos que quedaron pendientes.
 
-- `POST /api/generate`: recibe una URL y devuelve una plantilla HTML + narracion.
-- `POST /api/render`: recibe HTML/narracion/formato y devuelve un MP4.
-- `GET /api/health`: health check ligero para Render.
+### 3. Anti-OOM (Gestión de Memoria)
+Hostinger nos proporciona 8GB de RAM. Para evitar que Chromium consuma toda la memoria del sistema operativo generando bloqueos en cascada:
+- Se implementó `chrome-wrapper.sh` que limita la memoria v8 de Chromium a 2GB (`--max-old-space-size=2048`).
+- Se definió un archivo `swapfile` de 2GB en la VPS.
+- En `docker-compose.yml`, se limitó el uso de memoria RAM del contenedor a 6GB y se amplió el `shm_size` a 2GB para evitar cuelgues del navegador headless.
+- Se configuró `PORT="0"` en la ejecución del subproceso `hyperframes` para evitar colisiones de puertos internos con Next.js.
 
-La build local funciona:
+### 4. Seguridad (API Key & Rate Limiting)
+- Se ha protegido toda la API de generación y renderizado mediante el uso de un header `Authorization: Bearer <API_KEY>`.
+- La clave `API_KEY` se define en el archivo `.env` del servidor.
+- El frontend ahora incluye un campo seguro para introducir esta clave antes de interactuar.
+- Se ha añadido un Middleware de Rate Limiting por IP para prevenir abusos.
 
-```powershell
-npm.cmd run build
-```
+### 5. Proxy Nginx
+Nginx escucha en el puerto 80 (HTTP) público y reenvía el tráfico internamente al puerto `10000` de Docker, protegiendo así el servicio Node.js.
 
-El proyecto incluye un `Dockerfile` con Node 22, Chromium, chrome-headless-shell, FFmpeg, espeak-ng y fuentes basicas para poder renderizar videos.
+## Cómo Probar y Actualizar en la VPS
 
-## Problema Detectado
+Para desplegar cualquier cambio nuevo de código en la VPS:
 
-Se recibio una pagina HTML de Render con:
+1. Subir cambios desde local a GitHub:
+   ```powershell
+   git add -A
+   git commit -m "Descripción del cambio"
+   git push origin main
+   ```
+2. Entrar por SSH a la VPS y actualizar el contenedor:
+   ```bash
+   cd /root/hyperframes-render-studio
+   git pull origin main
+   docker compose down
+   docker compose up -d --build
+   ```
 
-- `502 Bad Gateway`
-- `This service is currently unavailable`
-- `Request ID: ...-SEA`
-
-Eso no era un error generado por la app, sino por el proxy de Render. Significa que Render no pudo comunicarse correctamente con el servicio desplegado.
-
-Las causas mas probables son:
-
-1. El proceso de la app no estaba escuchando en el puerto esperado por Render.
-2. El proceso arrancaba y luego se cerraba.
-3. Render estaba apuntando a una carpeta incorrecta del repo.
-4. El renderizado de video consumia demasiada memoria/CPU y Render mataba el proceso.
-5. El render tardaba demasiado para una respuesta HTTP directa.
-
-## Cambios Realizados
-
-### 1. Arranque propio para Next
-
-Se creo `server.js` para controlar explicitamente el servidor HTTP:
-
-- escucha en `0.0.0.0`;
-- usa `process.env.PORT`;
-- deja `keepAliveTimeout` y `headersTimeout` en 120 segundos;
-- evita depender directamente de `next start`.
-
-`package.json` ahora arranca con:
-
-```json
-"start": "node server.js"
-```
-
-### 2. Health check
-
-Se agrego:
-
-```text
-src/app/api/health/route.ts
-```
-
-Devuelve:
-
-```json
-{ "ok": true, "service": "hyperframes-render-studio" }
-```
-
-Render deberia configurar el Health Check Path como:
-
-```text
-/api/health
-```
-
-### 3. Dependencia HyperFrames fijada
-
-Antes estaba:
-
-```json
-"hyperframes": "latest"
-```
-
-Ahora queda fijada a:
-
-```json
-"hyperframes": "0.6.21"
-```
-
-Esto evita builds no reproducibles en Render.
-
-### 4. Dockerfile ajustado
-
-Se cambio:
-
-- `npm install` por `npm ci`;
-- `PORT=10000`;
-- `EXPOSE 10000`;
-- copia de `server.js` al contenedor final.
-
-Render inyecta `PORT`, pero dejar `10000` como valor por defecto encaja con su convencion habitual.
-
-### 5. README actualizado
-
-Se documento:
-
-- usar Docker en Render;
-- configurar `Root Directory` como `hyperframes-render-studio` si el repo contiene mas carpetas;
-- configurar `/api/health`;
-- revisar logs para errores de puerto, crash, timeout o falta de recursos.
-
-## Como Probar Localmente
-
-Desde:
-
-```powershell
-cd "c:\Users\USUARIO\Downloads\videos automatizado\hyperframes-render-studio"
-```
-
-Instalar dependencias:
-
-```powershell
-npm.cmd install
-```
-
-Build:
-
-```powershell
-npm.cmd run build
-```
-
-Arrancar:
-
-```powershell
-$env:PORT="3000"
-npm.cmd run start
-```
-
-Health check:
-
-```powershell
-Invoke-WebRequest -Uri http://127.0.0.1:3000/api/health -UseBasicParsing
-```
-
-## Como Desplegar en Render
-
-Configuracion recomendada:
-
-- Service type: Web Service
-- Runtime: Docker
-- Root Directory: `hyperframes-render-studio`
-- Health Check Path: `/api/health`
-- No usar un start command manual si Render esta usando el Dockerfile; dejar que ejecute el `CMD` del Dockerfile.
-
-Despues del deploy, revisar los logs y buscar:
-
-- `Ready on http://0.0.0.0:...`
-- `SIGKILL`
-- `SIGTERM`
-- `out of memory`
-- errores de Chromium;
-- errores de FFmpeg;
-- errores de HyperFrames;
-- errores de permisos en `/tmp`.
-
-## Pendientes / Siguiente Trabajo
+## Siguientes Pasos (Next Steps)
 
 ### Prioridad Alta
-
-1. Verificar el deploy real en Render con la configuracion anterior.
-2. Confirmar que `/api/health` responde 200 en produccion.
-3. Probar `POST /api/generate` con una URL publica simple.
-4. Probar `POST /api/render` con un HTML minimo antes de usar plantillas complejas.
+1. **Prueba End-to-End en Producción:** Generar un vídeo completo en la VPS, comprobando que el archivo final `.mp4` se descarga correctamente, se escucha la narración TTS y la calidad visual es fluida.
+2. **Asignación de Dominio y HTTPS:** Comprar/vincular un dominio web apuntando a la IP de la VPS. Una vez apuntado, utilizar Certbot (`sudo certbot --nginx -d tudominio.com`) para securizar todo el tráfico con HTTPS automáticamente y evitar avisos de navegador inseguro.
 
 ### Prioridad Media
-
-1. Si `/api/render` causa 502 o timeouts, pasar el renderizado a una cola:
-   - `POST /api/render-jobs` crea un job;
-   - `GET /api/render-jobs/:id` consulta estado;
-   - `GET /api/render-jobs/:id/download` descarga el MP4.
-2. Guardar outputs temporalmente en disco o storage externo.
-3. Limitar duracion, resolucion, fps y numero de renders concurrentes.
-4. Agregar autenticacion o una clave simple si se expone publicamente.
+1. **Maping Permanente de Volúmenes:** Actualmente `/tmp/hyperframes-jobs/` está dentro del contenedor y sobrevive reinicios *del servicio*, pero si se destruye el contenedor (`docker compose down -v`), se pierde el historial. Configurar un volumen persistente de Docker en `docker-compose.yml` para los jobs y los outputs `.mp4`.
+2. **Limpieza Automática (Cron):** Los archivos MP4 generados se quedan en disco ocupando espacio. Implementar un "Garbage Collector" en `renderQueue.ts` que borre vídeos y trabajos (jobs) que tengan más de 24 horas de antigüedad.
 
 ### Prioridad Baja
-
-1. Mejorar logs estructurados de `/api/render`.
-2. Mostrar logs resumidos en la UI cuando falla un render.
-3. Permitir elegir voces TTS.
-4. Añadir presets visuales para distintos tipos de URL.
-
-## Hipotesis Principal
-
-El 502 de Render no viene del HTML de la app. Viene de infraestructura: Render no recibe respuesta valida del proceso Node, o el proceso muere durante una operacion pesada.
-
-Los cambios actuales atacan la parte de arranque/puerto/health check. Si despues de esto el 502 solo ocurre durante renderizado, el siguiente paso real es desacoplar el render de la peticion HTTP con una cola de trabajos.
-
+1. Integración de plantillas avanzadas con voces TTS premium (Kokoro / ElevenLabs) si la máquina lo soporta.
+2. Ajustar calidades de codificación de FFmpeg desde la UI (Resolución, FPS, CRF).
