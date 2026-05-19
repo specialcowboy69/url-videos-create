@@ -9,6 +9,7 @@ services:
       - NODE_ENV=production
       - PORT=10000
       - API_KEY=${API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     shm_size: '2gb' # Aumentado a 2GB dado que el host tiene 8GB (Chrome consume mucha SHM al procesar video)
     deploy:
       resources:
