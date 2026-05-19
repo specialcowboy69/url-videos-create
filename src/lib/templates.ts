@@ -61,25 +61,48 @@ function shorten(value: string, maxLength: number) {
   return `${clean.slice(0, maxLength - 1).trim()}…`;
 }
 
+function getPills(text: string, count: number): string[] {
+  const matches = text.match(/[^.!?]+[.!?]+/g) || [text];
+  const sentences = Array.from(matches).map(s => s.trim()).filter(s => s.length > 15);
+  
+  if (sentences.length < count) {
+    // Si no hay suficientes frases claras, simplemente troceamos el texto
+    const chunkLength = Math.ceil(text.length / count);
+    const chunks = [];
+    for (let i = 0; i < count; i++) {
+       chunks.push(text.slice(i * chunkLength, (i + 1) * chunkLength).trim());
+    }
+    return chunks.map(c => c + (c.endsWith(".") ? "" : "..."));
+  }
+  return sentences.slice(0, count);
+}
+
 export function buildUrlVideoTemplate(input: TemplateInput): GeneratedVideoTemplate {
-  const title = escapeHtml(shorten(input.title || input.domain, input.format.id === "9:16" ? 76 : 110));
-  const description = escapeHtml(shorten(input.description || "Resumen visual generado desde la URL.", input.format.id === "9:16" ? 120 : 180));
-  const domain = escapeHtml(input.domain);
-  const sourceUrl = escapeHtml(input.sourceUrl);
   const isVertical = input.format.id === "9:16";
   const isSquare = input.format.id === "1:1";
+  
+  const pills = getPills(input.description || "Video generado desde URL.", 3);
+  const pill1 = escapeHtml(shorten(pills[0] || "", 150));
+  const pill2 = escapeHtml(shorten(pills[1] || "", 150));
+  const pill3 = escapeHtml(shorten(pills[2] || "", 150));
+
+  const title = escapeHtml(shorten(input.title || input.domain, isVertical ? 76 : 110));
+  const description = escapeHtml(shorten(input.description || "Resumen visual generado desde la URL.", isVertical ? 120 : 180));
+  const domain = escapeHtml(input.domain);
+  const sourceUrl = escapeHtml(input.sourceUrl);
+  
   const titleSize = isVertical ? 68 : isSquare ? 72 : 92;
   const bodySize = isVertical ? 30 : 34;
   const scenePad = isVertical ? "72px 64px 150px" : "92px 120px 132px";
   const cardGrid = isVertical ? "1fr" : "1.1fr .9fr";
-  const narrationTitle = shorten(input.title || input.domain, 150);
-  const narrationDescription = shorten(input.description || "Estos son los puntos clave de la pagina.", 220);
+  
+  // Narration es ahora 100% fiel a lo que mostramos y extraemos de la noticia real
   const narrationText = [
-    `Esta pagina habla de: ${narrationTitle}.`,
-    narrationDescription,
-    "La aplicacion convierte el enlace en un guion visual, con datos destacados y subtitulos en pantalla.",
-    "Despues renderiza el resultado como video listo para compartir.",
-    `Fuente: ${input.domain}.`
+    `Analizando: ${title}.`,
+    pills[0] || "",
+    pills[1] || "",
+    pills[2] || "",
+    `Fuente original: ${domain}.`
   ].join(" ");
 
   const htmlCode = `<!doctype html>
@@ -106,58 +129,49 @@ export function buildUrlVideoTemplate(input: TemplateInput): GeneratedVideoTempl
       <p class="kicker">Video generado desde ${domain}</p>
       <h1>${title}</h1>
       <p class="subtitle">${description}</p>
-      <div class="caption">Esta pagina habla de: ${title}</div>
+      <div class="caption">Analizando: ${shorten(title, 80)}</div>
     </section>
 
     <section id="scene-2" class="scene split">
       <div class="copy">
         <p class="kicker">Contexto</p>
-        <h2>Lo esencial, convertido en escena</h2>
-        <p class="body">${description}</p>
+        <h2>Datos Clave</h2>
+        <p class="body">${pill1}</p>
       </div>
       <div class="visual-card">
         <div class="scan"></div>
-        <strong>ANALISIS</strong>
-        <span>titulo</span>
-        <span>descripcion</span>
-        <span>fuente</span>
+        <strong>EXTRACTO</strong>
+        <span style="font-size: 26px; font-weight: normal; line-height: 1.4; margin-top: 10px;">"${pill1}"</span>
       </div>
-      <div class="caption">La app detecta titulo, descripcion y fuente para construir el relato.</div>
+      <div class="caption">${shorten(pill1, 80)}</div>
     </section>
 
     <section id="scene-3" class="scene data">
-      <p class="kicker">Claves</p>
-      <div class="metric-row">
-        <div><strong>01</strong><span>Captura</span></div>
-        <div><strong>02</strong><span>Guion</span></div>
-        <div><strong>03</strong><span>Render</span></div>
+      <p class="kicker">Análisis</p>
+      <div class="metric-row" style="grid-template-columns: 1fr;">
+        <div style="background:#0B3D91; color:white; display:flex; align-items:center; min-height: ${isVertical ? "300px" : "200px"};">
+          <span style="font-size:${isVertical ? "40px" : "50px"}; font-family:Georgia,serif; font-weight:normal; line-height:1.3;">"${pill2}"</span>
+        </div>
       </div>
-      <svg class="line-chart" viewBox="0 0 900 360" aria-hidden="true">
-        <path class="axis" d="M60 300H840M60 70V300" />
-        <path class="chart-path" d="M80 260C190 210 230 240 330 170C430 100 520 130 620 85C720 40 780 92 835 62" />
-        <circle class="dot" cx="330" cy="170" r="11" />
-        <circle class="dot" cx="620" cy="85" r="11" />
-        <circle class="dot" cx="835" cy="62" r="11" />
-      </svg>
-      <div class="caption">Cada enlace se convierte en beats visuales, no solo en una tarjeta estatica.</div>
+      <div class="caption">${shorten(pill2, 80)}</div>
     </section>
 
     <section id="scene-4" class="scene cards-scene">
-      <p class="kicker">Formato ${input.format.id}</p>
-      <h2>Subtitulos quemados y ritmo editorial</h2>
-      <div class="card-stack">
-        <article>Hook de apertura</article>
-        <article>Dato o contexto</article>
-        <article>Cierre compartible</article>
+      <p class="kicker">Más Detalles</p>
+      <h2>Información Extraída</h2>
+      <div class="card-stack" style="grid-template-columns: 1fr;">
+        <article style="font-size:${isVertical ? "38px" : "46px"}; font-weight:normal; line-height:1.4; display:block; padding: 50px;">
+          "${pill3}"
+        </article>
       </div>
-      <div class="caption">Los subtitulos quedan visibles dentro del propio video.</div>
+      <div class="caption">${shorten(pill3, 80)}</div>
     </section>
 
     <section id="scene-5" class="scene close">
       <p class="kicker">Fuente</p>
       <h2>${domain}</h2>
       <p class="source">${sourceUrl}</p>
-      <div class="caption">Video listo para previsualizar, descargar y publicar.</div>
+      <div class="caption">Lee el artículo completo en la web original.</div>
     </section>
 
     <style>
@@ -172,8 +186,8 @@ export function buildUrlVideoTemplate(input: TemplateInput): GeneratedVideoTempl
       .caption{position:absolute;left:${isVertical ? "48px" : "120px"};right:${isVertical ? "48px" : "120px"};bottom:${isVertical ? "94px" : "82px"};background:rgba(16,24,32,.92);color:white;padding:${isVertical ? "22px 28px" : "20px 30px"};font-size:${isVertical ? "28px" : "32px"};line-height:1.15;font-weight:900;z-index:8}
       .stamp{position:absolute;right:${isVertical ? "50px" : "130px"};top:${isVertical ? "70px" : "80px"};width:${isVertical ? 150 : 210}px;height:${isVertical ? 150 : 210}px;border:8px solid #0B3D91;border-radius:999px;display:flex;align-items:center;justify-content:center;color:#0B3D91;font-family:Georgia,serif;font-size:${isVertical ? 42 : 58}px;font-weight:900;transform:rotate(-8deg);opacity:.72}
       .split{display:grid;grid-template-columns:${cardGrid};align-items:center}.copy{display:flex;flex-direction:column;gap:26px}.visual-card{min-height:${isVertical ? "430px" : "520px"};background:#fff;border:1px solid #D8D1C5;box-shadow:0 24px 70px rgba(16,24,32,.16);padding:44px;display:flex;flex-direction:column;gap:24px;justify-content:center;position:relative;overflow:hidden}.visual-card strong{font-size:58px;color:#0B3D91}.visual-card span{font-size:34px;font-weight:900;border-bottom:3px solid #D8D1C5;padding-bottom:14px}.scan{position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(11,61,145,.18),transparent);width:45%}
-      .metric-row{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}.metric-row div{background:#fff;border:1px solid #D8D1C5;padding:32px}.metric-row strong{display:block;font-family:Georgia,serif;font-size:${isVertical ? "70px" : "96px"};line-height:1;color:#0B3D91}.metric-row span{font-size:${isVertical ? "26px" : "32px"};font-weight:900}.line-chart{width:100%;max-height:${isVertical ? "460px" : "420px"};background:#fff;border:1px solid #D8D1C5}.axis{fill:none;stroke:#D8D1C5;stroke-width:7}.chart-path{fill:none;stroke:#C7352B;stroke-width:12;stroke-linecap:round;stroke-dasharray:1200;stroke-dashoffset:1200}.dot{fill:#B38B21;opacity:0}
-      .cards-scene .card-stack{display:grid;grid-template-columns:${isVertical ? "1fr" : "repeat(3,1fr)"};gap:24px}.card-stack article{background:#0B3D91;color:white;padding:42px;font-size:${isVertical ? "34px" : "42px"};font-weight:900;min-height:${isVertical ? "150px" : "230px"};display:flex;align-items:end}.card-stack article:nth-child(2){background:#101820}.card-stack article:nth-child(3){background:#B38B21}
+      .metric-row{display:grid;gap:24px}.metric-row div{background:#fff;border:1px solid #D8D1C5;padding:42px}.metric-row strong{display:block;font-family:Georgia,serif;font-size:${isVertical ? "70px" : "96px"};line-height:1;color:#0B3D91}.metric-row span{font-size:${isVertical ? "26px" : "32px"};font-weight:900}
+      .cards-scene .card-stack{display:grid;gap:24px}.card-stack article{background:#0B3D91;color:white;padding:42px;font-size:${isVertical ? "34px" : "42px"};font-weight:900;min-height:${isVertical ? "150px" : "230px"};display:flex;align-items:center; justify-content:center; text-align:center;}
       .close{background:#101820;color:white}.close .grid{opacity:.1}.close h2{color:white}.source{max-width:100%;font-family:Consolas,monospace;font-size:${isVertical ? "22px" : "28px"};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d9e1e8}
     </style>
     <script>
@@ -199,8 +213,6 @@ export function buildUrlVideoTemplate(input: TemplateInput): GeneratedVideoTempl
       tl.fromTo(".visual-card", { opacity: 0, x: 80 }, { opacity: 1, x: 0, duration: .65, ease: "power3.out" }, 3.35);
       tl.to(".scan", { x: "190%", duration: 2.2, ease: "none" }, 3.6);
       tl.fromTo(".metric-row div", { opacity: 0, y: 50 }, { opacity: 1, y: 0, stagger: .12, duration: .45 }, 6.05);
-      tl.to(".chart-path", { strokeDashoffset: 0, duration: 1.6, ease: "power2.out" }, 6.55);
-      tl.to(".dot", { opacity: 1, stagger: .18, duration: .25 }, 7.4);
       tl.fromTo(".card-stack article", { opacity: 0, y: 70, rotation: 2 }, { opacity: 1, y: 0, rotation: 0, stagger: .14, duration: .5 }, 9.1);
       tl.to(".grid", { backgroundPosition: "180px 120px", duration: 14, ease: "none" }, 0);
       window.__timelines["url-video"] = tl;
