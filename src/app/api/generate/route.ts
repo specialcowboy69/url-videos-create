@@ -5,6 +5,7 @@ import { generateRateLimit } from "@/lib/rateLimit";
 import * as cheerio from "cheerio";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
+import { GoogleGenAI, Type } from "@google/genai";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,10 +73,13 @@ export async function POST(request: Request) {
     return Response.json({ error: "Only public http/https URLs are allowed." }, { status: 400 });
   }
 
+  if (!process.env.GEMINI_API_KEY) {
+    return Response.json({ error: "GEMINI_API_KEY is missing." }, { status: 500 });
+  }
+
   const format = getVideoFormat(payload.format);
 
   try {
-    // Usamos headers más parecidos a los de un navegador real para evitar bloqueos
     const response = await fetch(parsed.toString(), {
       redirect: "follow",
       signal: AbortSignal.timeout(12_000),
@@ -91,16 +95,12 @@ export async function POST(request: Request) {
     }
 
     const html = (await response.text()).slice(0, MAX_HTML_READ);
-    
-    // Parseo de metadatos básicos con Cheerio (Mucho más robusto que Regex)
     const $ = cheerio.load(html);
+
     const rawTitle = $('meta[property="og:title"]').attr('content') || $('title').text() || parsed.hostname;
     const title = decodeEntities(rawTitle.replace(/\s+/g, " ").trim());
 
-    const rawDesc = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content') || "";
-    const description = decodeEntities(rawDesc.replace(/\s+/g, " ").trim());
-
-    // Extraer el contenido principal del artículo con JSDOM + Readability
+    // Usamos Readability para extraer el cuerpo libre de basura (menús, pies de página)
     let articleText = "";
     try {
       const doc = new JSDOM(html, { url: parsed.toString() });
@@ -110,26 +110,67 @@ export async function POST(request: Request) {
         articleText = article.textContent.replace(/\s+/g, " ").trim();
       }
     } catch (e) {
-      console.warn("Readability failed to parse:", e);
+      console.warn("Readability failed:", e);
     }
 
-    // Mejoramos la descripción enviando el artículo extraído si existe
-    const finalDescription = articleText.length > 50 ? articleText : (description || "Video generado automáticamente desde esta URL.");
+    const contentToAnalyze = articleText.length > 100 ? articleText : $('body').text().replace(/\s+/g, " ").trim();
+    const cleanContent = contentToAnalyze.slice(0, 15000); // Límite razonable de tokens
+
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    let geminiData;
+    
+    try {
+      const aiResponse = await ai.models.generateContent({
+        model: "gemini-3.1-flash",
+        contents: `Analiza el siguiente texto de una web y genera un guion para un vídeo corto impactante. Crea entre 3 y 5 escenas.\n\nTEXTO:\n${cleanContent}`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              tickerText: { type: Type.STRING, description: "Cadena de texto en mayúsculas corta para el banner inferior animado" },
+              scenes: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    kicker: { type: Type.STRING, description: "Categoría o concepto corto (max 20 caracteres)" },
+                    title: { type: Type.STRING, description: "Titular impactante o frase principal para la escena" },
+                    caption: { type: Type.STRING, description: "Subtítulo o descripción breve quemada en pantalla (max 120 caracteres)" }
+                  },
+                  required: ["kicker", "title", "caption"]
+                }
+              },
+              narrationText: { type: Type.STRING, description: "Texto completo y fluido unificado que se enviará al sistema TTS para la locución del vídeo" }
+            },
+            required: ["tickerText", "scenes", "narrationText"]
+          }
+        }
+      });
+
+      const textOutput = aiResponse.text;
+      geminiData = JSON.parse(textOutput || "{}");
+    } catch (error) {
+      console.error("Gemini AI error:", error);
+      return Response.json({ error: "Failed to generate content with Gemini." }, { status: 500 });
+    }
+
+    if (!geminiData.scenes || geminiData.scenes.length === 0) {
+      throw new Error("Gemini returned no scenes.");
+    }
 
     const template = buildUrlVideoTemplate({
-      title,
-      description: finalDescription,
-      sourceUrl: parsed.toString(),
       domain: parsed.hostname.replace(/^www\./, ""),
-      format
+      sourceUrl: parsed.toString(),
+      format,
+      aiData: geminiData
     });
 
     return Response.json({
       htmlCode: template.htmlCode,
-      narrationText: template.narrationText,
+      narrationText: geminiData.narrationText,
       metadata: {
         title,
-        description: finalDescription.substring(0, 300) + "...", // Devolvemos un snippet
         domain: parsed.hostname,
         format
       }

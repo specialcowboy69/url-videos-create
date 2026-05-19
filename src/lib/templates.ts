@@ -1,11 +1,22 @@
 import type { VideoFormat } from "@/lib/videoFormats";
 
-export type TemplateInput = {
+export type AIScene = {
+  kicker: string;
   title: string;
-  description: string;
-  sourceUrl: string;
+  caption: string;
+};
+
+export type AIData = {
+  tickerText: string;
+  scenes: AIScene[];
+  narrationText: string;
+};
+
+export type TemplateInput = {
   domain: string;
+  sourceUrl: string;
   format: VideoFormat;
+  aiData: AIData;
 };
 
 export type GeneratedVideoTemplate = {
@@ -61,49 +72,44 @@ function shorten(value: string, maxLength: number) {
   return `${clean.slice(0, maxLength - 1).trim()}…`;
 }
 
-function getPills(text: string, count: number): string[] {
-  const matches = text.match(/[^.!?]+[.!?]+/g) || [text];
-  const sentences = Array.from(matches).map(s => s.trim()).filter(s => s.length > 15);
-  
-  if (sentences.length < count) {
-    // Si no hay suficientes frases claras, simplemente troceamos el texto
-    const chunkLength = Math.ceil(text.length / count);
-    const chunks = [];
-    for (let i = 0; i < count; i++) {
-       chunks.push(text.slice(i * chunkLength, (i + 1) * chunkLength).trim());
-    }
-    return chunks.map(c => c + (c.endsWith(".") ? "" : "..."));
-  }
-  return sentences.slice(0, count);
-}
-
 export function buildUrlVideoTemplate(input: TemplateInput): GeneratedVideoTemplate {
   const isVertical = input.format.id === "9:16";
   const isSquare = input.format.id === "1:1";
   
-  const pills = getPills(input.description || "Video generado desde URL.", 3);
-  const pill1 = escapeHtml(shorten(pills[0] || "", 150));
-  const pill2 = escapeHtml(shorten(pills[1] || "", 150));
-  const pill3 = escapeHtml(shorten(pills[2] || "", 150));
-
-  const title = escapeHtml(shorten(input.title || input.domain, isVertical ? 76 : 110));
-  const description = escapeHtml(shorten(input.description || "Resumen visual generado desde la URL.", isVertical ? 120 : 180));
   const domain = escapeHtml(input.domain);
   const sourceUrl = escapeHtml(input.sourceUrl);
   
   const titleSize = isVertical ? 68 : isSquare ? 72 : 92;
   const bodySize = isVertical ? 30 : 34;
   const scenePad = isVertical ? "72px 64px 150px" : "92px 120px 132px";
-  const cardGrid = isVertical ? "1fr" : "1.1fr .9fr";
   
-  // Narration es ahora 100% fiel a lo que mostramos y extraemos de la noticia real
-  const narrationText = [
-    `Analizando: ${title}.`,
-    pills[0] || "",
-    pills[1] || "",
-    pills[2] || "",
-    `Fuente original: ${domain}.`
-  ].join(" ");
+  const tickerText = escapeHtml(input.aiData.tickerText || "VIDEO GENERADO AUTOMATICAMENTE");
+  const scenes = input.aiData.scenes || [];
+  
+  // Duraciones
+  const SCENE_DURATION = 4; // segundos por escena generada
+  const INTRO_DURATION = 3;
+  const OUTRO_DURATION = 3.5;
+  const totalDuration = INTRO_DURATION + (scenes.length * SCENE_DURATION) + OUTRO_DURATION;
+
+  // Generamos el HTML dinámico de las escenas
+  const scenesHtml = scenes.map((scene, index) => {
+    const isDark = index % 2 === 1; // Alternar colores
+    const bgColor = isDark ? "#0B3D91" : "#fff";
+    const textColor = isDark ? "#fff" : "#0B3D91";
+    
+    return `
+    <section id="scene-ai-${index}" class="scene dynamic-scene">
+      <p class="kicker">${escapeHtml(scene.kicker)}</p>
+      <div class="visual-card" style="background:${bgColor}; color:${textColor}; padding:44px; border:1px solid #D8D1C5; min-height:${isVertical ? '350px' : '450px'}; display:flex; align-items:center; justify-content:center;">
+        <h2 style="color:${textColor}; text-align:center; font-size:${isVertical ? '50px' : '72px'}; max-width: 90%; line-height: 1.2;">
+          "${escapeHtml(scene.title)}"
+        </h2>
+      </div>
+      <div class="caption">${escapeHtml(shorten(scene.caption, 120))}</div>
+    </section>
+    `;
+  }).join("\n");
 
   const htmlCode = `<!doctype html>
 <html lang="es">
@@ -115,63 +121,30 @@ export function buildUrlVideoTemplate(input: TemplateInput): GeneratedVideoTempl
   <div
     data-composition-id="url-video"
     data-start="0"
-    data-duration="14"
+    data-duration="${totalDuration}"
     data-width="${input.format.width}"
     data-height="${input.format.height}"
     style="position:relative;width:100%;height:100%;background:#F7F4EE;color:#171717;font-family:Arial,sans-serif;overflow:hidden;isolation:isolate;"
   >
     {{NARRATION_AUDIO}}
     <div class="grid"></div>
-    <div class="ticker"><span>${domain} / VIDEO DESDE URL / GUION / SUBTITULOS / MP4 / ${domain} / VIDEO DESDE URL / </span></div>
+    <div class="ticker"><span>${tickerText} / ${tickerText} / ${tickerText} / ${tickerText} / </span></div>
 
-    <section id="scene-1" class="scene hero">
-      <div class="stamp">URL</div>
-      <p class="kicker">Video generado desde ${domain}</p>
-      <h1>${title}</h1>
-      <p class="subtitle">${description}</p>
-      <div class="caption">Analizando: ${shorten(title, 80)}</div>
+    <section id="scene-intro" class="scene hero">
+      <div class="stamp">IA</div>
+      <p class="kicker">Análisis Inteligente de ${domain}</p>
+      <h1>Video Generado por Gemini AI</h1>
+      <p class="subtitle">Extrayendo datos de la URL original...</p>
+      <div class="caption">Escaneando: ${domain}</div>
     </section>
 
-    <section id="scene-2" class="scene split">
-      <div class="copy">
-        <p class="kicker">Contexto</p>
-        <h2>Datos Clave</h2>
-        <p class="body">${pill1}</p>
-      </div>
-      <div class="visual-card">
-        <div class="scan"></div>
-        <strong>EXTRACTO</strong>
-        <span style="font-size: 26px; font-weight: normal; line-height: 1.4; margin-top: 10px;">"${pill1}"</span>
-      </div>
-      <div class="caption">${shorten(pill1, 80)}</div>
-    </section>
+    ${scenesHtml}
 
-    <section id="scene-3" class="scene data">
-      <p class="kicker">Análisis</p>
-      <div class="metric-row" style="grid-template-columns: 1fr;">
-        <div style="background:#0B3D91; color:white; display:flex; align-items:center; min-height: ${isVertical ? "300px" : "200px"};">
-          <span style="font-size:${isVertical ? "40px" : "50px"}; font-family:Georgia,serif; font-weight:normal; line-height:1.3;">"${pill2}"</span>
-        </div>
-      </div>
-      <div class="caption">${shorten(pill2, 80)}</div>
-    </section>
-
-    <section id="scene-4" class="scene cards-scene">
-      <p class="kicker">Más Detalles</p>
-      <h2>Información Extraída</h2>
-      <div class="card-stack" style="grid-template-columns: 1fr;">
-        <article style="font-size:${isVertical ? "38px" : "46px"}; font-weight:normal; line-height:1.4; display:block; padding: 50px;">
-          "${pill3}"
-        </article>
-      </div>
-      <div class="caption">${shorten(pill3, 80)}</div>
-    </section>
-
-    <section id="scene-5" class="scene close">
-      <p class="kicker">Fuente</p>
+    <section id="scene-outro" class="scene close">
+      <p class="kicker">Fuente Original</p>
       <h2>${domain}</h2>
       <p class="source">${sourceUrl}</p>
-      <div class="caption">Lee el artículo completo en la web original.</div>
+      <div class="caption">Lee el artículo completo en la web.</div>
     </section>
 
     <style>
@@ -185,22 +158,33 @@ export function buildUrlVideoTemplate(input: TemplateInput): GeneratedVideoTempl
       .subtitle,.body{font-size:${bodySize}px;line-height:1.16;font-weight:800;max-width:${isVertical ? "880px" : "1120px"};color:#343434}
       .caption{position:absolute;left:${isVertical ? "48px" : "120px"};right:${isVertical ? "48px" : "120px"};bottom:${isVertical ? "94px" : "82px"};background:rgba(16,24,32,.92);color:white;padding:${isVertical ? "22px 28px" : "20px 30px"};font-size:${isVertical ? "28px" : "32px"};line-height:1.15;font-weight:900;z-index:8}
       .stamp{position:absolute;right:${isVertical ? "50px" : "130px"};top:${isVertical ? "70px" : "80px"};width:${isVertical ? 150 : 210}px;height:${isVertical ? 150 : 210}px;border:8px solid #0B3D91;border-radius:999px;display:flex;align-items:center;justify-content:center;color:#0B3D91;font-family:Georgia,serif;font-size:${isVertical ? 42 : 58}px;font-weight:900;transform:rotate(-8deg);opacity:.72}
-      .split{display:grid;grid-template-columns:${cardGrid};align-items:center}.copy{display:flex;flex-direction:column;gap:26px}.visual-card{min-height:${isVertical ? "430px" : "520px"};background:#fff;border:1px solid #D8D1C5;box-shadow:0 24px 70px rgba(16,24,32,.16);padding:44px;display:flex;flex-direction:column;gap:24px;justify-content:center;position:relative;overflow:hidden}.visual-card strong{font-size:58px;color:#0B3D91}.visual-card span{font-size:34px;font-weight:900;border-bottom:3px solid #D8D1C5;padding-bottom:14px}.scan{position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(11,61,145,.18),transparent);width:45%}
-      .metric-row{display:grid;gap:24px}.metric-row div{background:#fff;border:1px solid #D8D1C5;padding:42px}.metric-row strong{display:block;font-family:Georgia,serif;font-size:${isVertical ? "70px" : "96px"};line-height:1;color:#0B3D91}.metric-row span{font-size:${isVertical ? "26px" : "32px"};font-weight:900}
-      .cards-scene .card-stack{display:grid;gap:24px}.card-stack article{background:#0B3D91;color:white;padding:42px;font-size:${isVertical ? "34px" : "42px"};font-weight:900;min-height:${isVertical ? "150px" : "230px"};display:flex;align-items:center; justify-content:center; text-align:center;}
       .close{background:#101820;color:white}.close .grid{opacity:.1}.close h2{color:white}.source{max-width:100%;font-family:Consolas,monospace;font-size:${isVertical ? "22px" : "28px"};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d9e1e8}
     </style>
     <script>
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true });
-      const beats = [
-        ["#scene-1", 0, 3],
-        ["#scene-2", 3, 5.8],
-        ["#scene-3", 5.8, 8.7],
-        ["#scene-4", 8.7, 11.4],
-        ["#scene-5", 11.4, 14]
-      ];
+      
+      const numScenes = ${scenes.length};
+      const SCENE_DUR = ${SCENE_DURATION};
+      const INTRO_DUR = ${INTRO_DURATION};
+      const OUTRO_DUR = ${OUTRO_DURATION};
+      
+      const beats = [];
+      // Intro
+      beats.push(["#scene-intro", 0, INTRO_DUR]);
+      
+      // Dynamic Scenes
+      let currentStart = INTRO_DUR;
+      for(let i = 0; i < numScenes; i++) {
+         beats.push(["#scene-ai-" + i, currentStart, currentStart + SCENE_DUR]);
+         currentStart += SCENE_DUR;
+      }
+      
+      // Outro
+      beats.push(["#scene-outro", currentStart, currentStart + OUTRO_DUR]);
+
       tl.set(".scene", { autoAlpha: 0 }, 0);
+      
       beats.forEach(([id, start, end]) => {
         tl.set(id, { autoAlpha: 1 }, start);
         tl.fromTo(id + " .kicker", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: .35 }, start + .1);
@@ -208,18 +192,16 @@ export function buildUrlVideoTemplate(input: TemplateInput): GeneratedVideoTempl
         tl.fromTo(id + " .caption", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: .35 }, start + .45);
         tl.to(id, { autoAlpha: 0, y: -28, duration: .35, ease: "power2.in" }, end - .35);
       });
-      tl.fromTo("#scene-1 .subtitle", { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: .55 }, .7);
-      tl.fromTo("#scene-1 .stamp", { opacity: 0, scale: .75, rotation: -18 }, { opacity: .72, scale: 1, rotation: -8, duration: .65, ease: "back.out(1.4)" }, .25);
-      tl.fromTo(".visual-card", { opacity: 0, x: 80 }, { opacity: 1, x: 0, duration: .65, ease: "power3.out" }, 3.35);
-      tl.to(".scan", { x: "190%", duration: 2.2, ease: "none" }, 3.6);
-      tl.fromTo(".metric-row div", { opacity: 0, y: 50 }, { opacity: 1, y: 0, stagger: .12, duration: .45 }, 6.05);
-      tl.fromTo(".card-stack article", { opacity: 0, y: 70, rotation: 2 }, { opacity: 1, y: 0, rotation: 0, stagger: .14, duration: .5 }, 9.1);
-      tl.to(".grid", { backgroundPosition: "180px 120px", duration: 14, ease: "none" }, 0);
+      
+      tl.fromTo("#scene-intro .subtitle", { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: .55 }, .7);
+      tl.fromTo("#scene-intro .stamp", { opacity: 0, scale: .75, rotation: -18 }, { opacity: .72, scale: 1, rotation: -8, duration: .65, ease: "back.out(1.4)" }, .25);
+      tl.to(".grid", { backgroundPosition: "180px 120px", duration: ${totalDuration}, ease: "none" }, 0);
+      
       window.__timelines["url-video"] = tl;
     </script>
   </div>
 </body>
 </html>`;
 
-  return { htmlCode, narrationText };
+  return { htmlCode, narrationText: input.aiData.narrationText || "" };
 }
