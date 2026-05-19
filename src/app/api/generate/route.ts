@@ -3,9 +3,7 @@ import { getVideoFormat } from "@/lib/videoFormats";
 import { validateApiKey } from "@/lib/auth";
 import { generateRateLimit } from "@/lib/rateLimit";
 import * as cheerio from "cheerio";
-import { JSDOM } from "jsdom";
-import { Readability } from "@mozilla/readability";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,7 +49,6 @@ export async function POST(request: Request) {
   }
 
   let payload: GenerateRequest;
-
   try {
     payload = (await request.json()) as GenerateRequest;
   } catch {
@@ -95,63 +92,58 @@ export async function POST(request: Request) {
     }
 
     const html = (await response.text()).slice(0, MAX_HTML_READ);
+    
+    // Limpieza radical de Cheerio
     const $ = cheerio.load(html);
-
     const rawTitle = $('meta[property="og:title"]').attr('content') || $('title').text() || parsed.hostname;
     const title = decodeEntities(rawTitle.replace(/\s+/g, " ").trim());
 
-    // Usamos Readability para extraer el cuerpo libre de basura (menús, pies de página)
-    let articleText = "";
-    try {
-      const doc = new JSDOM(html, { url: parsed.toString() });
-      const reader = new Readability(doc.window.document);
-      const article = reader.parse();
-      if (article && article.textContent) {
-        articleText = article.textContent.replace(/\s+/g, " ").trim();
-      }
-    } catch (e) {
-      console.warn("Readability failed:", e);
-    }
-
-    const contentToAnalyze = articleText.length > 100 ? articleText : $('body').text().replace(/\s+/g, " ").trim();
-    const cleanContent = contentToAnalyze.slice(0, 15000); // Límite razonable de tokens
-
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    let geminiData;
+    // Eliminar nodos basura explícitamente
+    $('script, style, nav, footer, iframe, noscript').remove();
     
-    try {
-      const aiResponse = await ai.models.generateContent({
-        model: "gemini-3.1-flash",
-        contents: `Analiza el siguiente texto de una web y genera un guion para un vídeo corto impactante. Crea entre 3 y 5 escenas.\n\nTEXTO:\n${cleanContent}`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              tickerText: { type: Type.STRING, description: "Cadena de texto en mayúsculas corta para el banner inferior animado" },
-              scenes: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    kicker: { type: Type.STRING, description: "Categoría o concepto corto (max 20 caracteres)" },
-                    title: { type: Type.STRING, description: "Titular impactante o frase principal para la escena" },
-                    caption: { type: Type.STRING, description: "Subtítulo o descripción breve quemada en pantalla (max 120 caracteres)" }
-                  },
-                  required: ["kicker", "title", "caption"]
-                }
-              },
-              narrationText: { type: Type.STRING, description: "Texto completo y fluido unificado que se enviará al sistema TTS para la locución del vídeo" }
-            },
-            required: ["tickerText", "scenes", "narrationText"]
-          }
-        }
-      });
+    const bodyText = $('body').text().replace(/\s+/g, " ").trim();
+    // Recorte a máximo seguro de 8,000 caracteres
+    const cleanContent = bodyText.slice(0, 8000);
 
-      const textOutput = aiResponse.text;
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    // Usamos gemini-2.0-flash como solicitaste (familia del 2)
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.0-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: SchemaType.OBJECT,
+          properties: {
+            tickerText: { type: SchemaType.STRING, description: "Cadena de texto en mayúsculas corta para el banner inferior animado" },
+            scenes: {
+              type: SchemaType.ARRAY,
+              items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  kicker: { type: SchemaType.STRING, description: "Categoría o concepto corto (max 20 caracteres)" },
+                  title: { type: SchemaType.STRING, description: "Titular impactante o frase principal para la escena" },
+                  caption: { type: SchemaType.STRING, description: "Subtítulo o descripción breve quemada en pantalla (max 120 caracteres)" }
+                },
+                required: ["kicker", "title", "caption"]
+              }
+            },
+            narrationText: { type: SchemaType.STRING, description: "Texto completo y fluido unificado que se enviará al sistema TTS para la locución del vídeo" }
+          },
+          required: ["tickerText", "scenes", "narrationText"]
+        }
+      }
+    });
+    
+    let geminiData;
+    try {
+      const prompt = `Actúa como un copywriter experto y director editorial para un vídeo de formato corto. Analiza el siguiente texto de una web y genera un guion impactante creando entre 3 y 4 escenas dinámicas.\n\nTEXTO:\n${cleanContent}`;
+      
+      const result = await model.generateContent(prompt);
+      const textOutput = result.response.text();
+      
       geminiData = JSON.parse(textOutput || "{}");
     } catch (error) {
-      console.error("Gemini AI error:", error);
+      console.error("Gemini Failure Trailing:", error);
       return Response.json({ error: "Failed to generate content with Gemini." }, { status: 500 });
     }
 
@@ -176,6 +168,7 @@ export async function POST(request: Request) {
       }
     });
   } catch (error) {
+    console.error("Gemini Failure Trailing (General Error):", error);
     const details = error instanceof Error ? error.message : "Unknown URL fetch error.";
     return Response.json({ error: "Could not generate from URL.", details }, { status: 500 });
   }
